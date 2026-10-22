@@ -1,0 +1,12 @@
+
+{
+  "name": "Meu Dinheiro",
+  "short_name": "Meu Dinheiro",
+  "description": "Meu aplicativo pessoal de controle financeiro",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f5ef",
+  "theme_color": "#245c48",
+  "orientation": "portrait"
+}
