@@ -5,9 +5,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#263e33">
+
   <title>Meu Dinheiro</title>
+
+  <link rel="manifest" href="./manifest.json">
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
   <main class="app">
     <header class="topo">
@@ -16,6 +20,7 @@
         <h1>Meu Dinheiro <span>♡</span></h1>
         <p class="descricao">Organize seu mês com tranquilidade.</p>
       </div>
+
       <div class="mes">
         <label for="mes">Mês</label>
         <input type="month" id="mes">
@@ -63,6 +68,7 @@
             Nome da conta
             <input id="nomeDespesa" required placeholder="Ex.: Internet">
           </label>
+
           <label>
             Categoria
             <select id="categoria">
@@ -75,15 +81,18 @@
               <option>Outros</option>
             </select>
           </label>
+
           <label>
             Valor (R$)
             <input id="valorDespesa" type="number" min="0.01" step="0.01" required placeholder="0,00">
           </label>
+
           <label>
             Vencimento
             <input id="vencimento" type="date">
           </label>
         </div>
+
         <div class="acoes-form">
           <button type="button" id="cancelar">Cancelar</button>
           <button type="submit">Salvar conta</button>
