@@ -1,5 +1,5 @@
 
-const CACHE_NAME = "meu-dinheiro-v6";
+const CACHE_NAME = "meu-dinheiro-v7";
 
 const ARQUIVOS = [
   "./",
