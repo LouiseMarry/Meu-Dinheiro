@@ -408,24 +408,33 @@ function nomeSemParcela(conta) {
 
 function abrirEdicao(conta, indice) {
   // Usa o início original da compra mesmo ao editar a parcela de outro mês.
-  const numero = Number(conta.parcelaNumero) || 1;
-  const mesInicio = adicionarMeses(mesAtual, 1 - numero);
+  const grupo = identificarParcelas(conta);
+  const legado = grupo && !grupo.id ? grupo : null;
+  const numero = Number(conta.parcelaNumero) || (legado
+    ? Number(conta.nome.slice(conta.nome.lastIndexOf("(") + 1).split("/")[0])
+    : 1);
+  const mesInicio = legado ? legado.inicio : adicionarMeses(mesAtual, 1 - numero);
   edicao = {
     indice,
     mesSelecionado: mesAtual,
     id: conta.parcelamentoId || null,
-    mesInicio: conta.parcelamentoId ? mesInicio : mesAtual
+    grupoLegado: legado,
+    mesInicio: grupo ? mesInicio : mesAtual
   };
-  document.getElementById("nomeDespesa").value = nomeSemParcela(conta);
+  document.getElementById("nomeDespesa").value = legado ? legado.nome : nomeSemParcela(conta);
   document.getElementById("categoria").value = conta.categoria;
   document.getElementById("valorDespesa").value = conta.valor;
-  quantidadeParcelas.value = conta.parcelasTotal || 1;
+  quantidadeParcelas.value = conta.parcelasTotal || (legado ? legado.total : 1);
   // Recupera o dia de vencimento da primeira parcela, quando existir.
   const primeiro = edicao.id
     ? (dadosPorMes[edicao.mesInicio]?.despesas || []).find(
         item => item.parcelamentoId === edicao.id
       )
-    : conta;
+    : legado
+      ? (dadosPorMes[legado.inicio]?.despesas || []).find(
+          item => pertenceAoGrupo(item, legado.inicio, legado)
+        )
+      : conta;
   document.getElementById("vencimento").value =
     primeiro?.vencimento || conta.vencimento || "";
   if (botaoSalvar) botaoSalvar.textContent = "Salvar alterações";
@@ -497,29 +506,26 @@ function editarParcelamento(valores) {
     vt: vt.value,
     despesas: despesas.map(item => ({ ...item }))
   };
-  // Guardar o estado de pagamento de cada mês ao editar a compra.
+  // Preserve os pagamentos de cada mês, inclusive em parcelamentos antigos.
   const pagamentosAnteriores = new Map();
-  if (edicao.id) {
+  if (edicao.id || edicao.grupoLegado) {
     for (const [chave, dados] of Object.entries(copia)) {
       for (const item of (dados.despesas || [])) {
-        if (item.parcelamentoId === edicao.id) {
+        if (edicao.id ? item.parcelamentoId === edicao.id
+          : pertenceAoGrupo(item, chave, edicao.grupoLegado)) {
           pagamentosAnteriores.set(chave, item.pago === true);
         }
       }
     }
+    for (const [chave, dados] of Object.entries(copia)) {
+      if (!Array.isArray(dados.despesas)) continue;
+      dados.despesas = dados.despesas.filter(item => !(edicao.id
+        ? item.parcelamentoId === edicao.id
+        : pertenceAoGrupo(item, chave, edicao.grupoLegado)));
+    }
   } else {
     pagamentosAnteriores.set(edicao.mesSelecionado,
       copia[edicao.mesSelecionado].despesas[edicao.indice]?.pago === true);
-  }
-  if (edicao.id) {
-    for (const dados of Object.values(copia)) {
-      if (Array.isArray(dados.despesas)) {
-        dados.despesas = dados.despesas.filter(
-          item => item.parcelamentoId !== edicao.id
-        );
-      }
-    }
-  } else {
     copia[edicao.mesSelecionado].despesas.splice(edicao.indice, 1);
   }
 
@@ -610,6 +616,70 @@ formulario.addEventListener("submit", evento => {
   renderizarDespesas();
 });
 
+
+// Backup completo no próprio dispositivo: nenhum dado é enviado ao GitHub.
+function validarBackup(arquivo) {
+  const origem = arquivo?.tipo === "meu-dinheiro-backup" ? arquivo.dados : arquivo;
+  if (!origem || typeof origem !== "object" || Array.isArray(origem)) throw Error("Arquivo inválido.");
+  if (Object.keys(origem).length > 600) throw Error("Muitos meses no backup.");
+  const resultado = {};
+  for (const [chave, dados] of Object.entries(origem)) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(chave) || !dados ||
+        !Array.isArray(dados.despesas) || dados.despesas.length > 10000)
+      throw Error("Dados inválidos no mês " + chave);
+    const contas = dados.despesas.map(conta => {
+      if (!conta || typeof conta.nome !== "string" ||
+          typeof conta.categoria !== "string" ||
+          !Number.isFinite(Number(conta.valor)) || Number(conta.valor) < 0)
+        throw Error("Despesa inválida no arquivo.");
+      return {...conta, pago: conta.pago === true};
+    });
+    resultado[chave] = {
+      salario: String(dados.salario ?? ""),
+      vt: String(dados.vt ?? ""),
+      despesas: contas
+    };
+  }
+  return resultado;
+}
+document.getElementById("exportarBackup").addEventListener("click", () => {
+  const copia = JSON.parse(JSON.stringify(dadosPorMes));
+  if (mesAtual) copia[mesAtual] = {
+    salario: salario.value, vt: vt.value,
+    despesas: despesas.map(conta => ({...conta}))
+  };
+  const blob = new Blob([JSON.stringify({
+    tipo:"meu-dinheiro-backup",versao:1,
+    exportadoEm:new Date().toISOString(),dados:copia
+  },null,2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "meu-dinheiro-backup-" + new Date().toISOString().slice(0,10) + ".json";
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url),60000);
+});
+const arquivoBackup = document.getElementById("arquivoBackup");
+document.getElementById("importarBackup").addEventListener("click", () => arquivoBackup.click());
+arquivoBackup.addEventListener("change", async () => {
+  const arquivo = arquivoBackup.files?.[0];
+  arquivoBackup.value = "";
+  if (!arquivo) return;
+  if (arquivo.size > 5*1024*1024) {alert("Backup muito grande (máximo 5 MB).");return;}
+  try {
+    const conteudo = validarBackup(JSON.parse(await arquivo.text()));
+    if (!confirm("Restaurar " + Object.keys(conteudo).length + " mês(es) do backup?\n\n" +
+      "Isso SUBSTITUI os dados deste dispositivo. Salve um backup atual antes, se precisar.")) return;
+    localStorage.setItem(CHAVE,JSON.stringify(conteudo));
+    dadosPorMes = conteudo;
+    carregarMes();
+    alert("Dados restaurados.");
+  } catch (erro) {
+    console.error("Falha ao restaurar:",erro);
+    alert("Não foi possível restaurar: " + erro.message);
+  }
+});
+
 // SALVAR SALÁRIO AUTOMATICAMENTE
 
 salario.addEventListener("input", () => {
@@ -645,7 +715,7 @@ carregarMes();
 // SERVICE WORKER
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    const chaveAtualizacao = "meu-dinheiro-recarregamento-v15";
+    const chaveAtualizacao = "meu-dinheiro-recarregamento-v16";
     if (sessionStorage.getItem(chaveAtualizacao) === "feito") return;
     sessionStorage.setItem(chaveAtualizacao, "feito");
     window.location.reload();
