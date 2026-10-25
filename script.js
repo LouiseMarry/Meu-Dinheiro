@@ -11,8 +11,8 @@ const mes = document.getElementById("mes");
 const salario = document.getElementById("salario");
 const vt = document.getElementById("vt");
 const quantidadeParcelas = document.getElementById("quantidadeParcelas");
-// Preferência salva exclusivamente neste navegador/dispositivo.
-const CHAVE_VT_PESSOAL = "meu-dinheiro-vt-pessoal-v1";
+// O VT é editável e independente para cada mês.
+vt.readOnly = false;
 const totalDespesas = document.getElementById("totalDespesas");
 const saldo = document.getElementById("saldo");
 const formulario = document.getElementById("formDespesa");
@@ -84,9 +84,7 @@ function carregarMes() {
   };
 
   salario.value = dados.salario ?? "";
-  // A preferência pessoal, quando definida, vale para todos os meses.
-  // Sem preferência, preservamos o VT já registrado no mês.
-  vt.value = localStorage.getItem(CHAVE_VT_PESSOAL) ?? (dados.vt ?? "");
+  vt.value = dados.vt ?? "";
 
   despesas = Array.isArray(dados.despesas)
     ? dados.despesas.map(conta => ({ ...conta }))
@@ -312,16 +310,8 @@ salario.addEventListener("input", () => {
   salvarDados();
 });
 
-// Cada pessoa pode definir seu VT, válido nos meses seguintes apenas
-// no próprio navegador. Nenhum valor pessoal fica no código público.
-vt.addEventListener("input", () => {
-  try {
-    localStorage.setItem(CHAVE_VT_PESSOAL, vt.value);
-  } catch (erro) {
-    console.error("Não foi possível salvar a preferência do VT:", erro);
-  }
-  salvarDados();
-});
+// O valor informado é salvo somente no mês selecionado.
+vt.addEventListener("input", salvarDados);
 
 // TROCAR DE MÊS
 // O MÊS ANTERIOR É SALVO ANTES DE CARREGAR O NOVO
