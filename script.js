@@ -117,7 +117,7 @@ function identificarParcelas(conta) {
     return { id: conta.parcelamentoId };
   }
   // Compatibilidade com parcelas mais antigas, sem identificador.
-  const identificacao = /^(.*) \\((\\d+)\\/(\\d+)\\)$/.exec(conta.nome);
+  const identificacao = /^(.*) \((\d+)\/(\d+)\)$/.exec(conta.nome);
   if (!identificacao) return null;
   const [, nome, numeroTexto, totalTexto] = identificacao;
   const numero = Number(numeroTexto);
@@ -228,7 +228,7 @@ function renderizarDespesas() {
       const grupo = identificarParcelas(conta);
       if (grupo) {
         if (!confirm(
-          "Excluir a compra parcelada inteira, de todos os meses?\\n\\n" +
+          "Excluir a compra parcelada inteira, de todos os meses?\n\n" +
           "Isso removerá todas as parcelas desta compra."
         )) return;
 
