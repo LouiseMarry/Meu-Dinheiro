@@ -15,6 +15,7 @@ const quantidadeParcelas = document.getElementById("quantidadeParcelas");
 vt.readOnly = false;
 const totalDespesas = document.getElementById("totalDespesas");
 const saldo = document.getElementById("saldo");
+const saldoPrevisto = document.getElementById("saldoPrevisto");
 const faltaPagar = document.getElementById("faltaPagar");
 const formulario = document.getElementById("formDespesa");
 const lista = document.getElementById("listaDespesas");
@@ -105,15 +106,19 @@ function atualizarResumo() {
     0
   );
 
-  totalDespesas.textContent = dinheiro(total);
-  // Pagamento reduz a dívida pendente, nunca aumenta o saldo disponível.
-  const pendente = despesas.reduce((soma, conta) =>
-    soma + (conta.pago === true ? 0 : (Number(conta.valor) || 0)), 0);
-  faltaPagar.textContent = "Falta pagar: " + dinheiro(pendente);
-
-  saldo.textContent = dinheiro(
-    (Number(salario.value) || 0) - total
+  const pago = despesas.reduce(
+    (soma, conta) => soma + (conta.pago === true ? (Number(conta.valor) || 0) : 0),
+    0
   );
+  const pendente = total - pago;
+  const recebido = Number(salario.value) || 0;
+
+  totalDespesas.textContent = dinheiro(total);
+  faltaPagar.textContent = "Falta pagar: " + dinheiro(pendente);
+  // O dinheiro disponível diminui apenas quando uma conta é paga.
+  // O saldo previsto desconta todas as contas, sem contar pagamento duas vezes.
+  saldo.textContent = dinheiro(recebido - pago);
+  saldoPrevisto.textContent = "Saldo previsto: " + dinheiro(recebido - total);
 }
 
 // Identifica parcelas atuais e antigas sem apagar compras não relacionadas.
@@ -640,7 +645,7 @@ carregarMes();
 // SERVICE WORKER
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    const chaveAtualizacao = "meu-dinheiro-recarregamento-v14";
+    const chaveAtualizacao = "meu-dinheiro-recarregamento-v15";
     if (sessionStorage.getItem(chaveAtualizacao) === "feito") return;
     sessionStorage.setItem(chaveAtualizacao, "feito");
     window.location.reload();
