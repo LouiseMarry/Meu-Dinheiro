@@ -111,6 +111,43 @@ function atualizarResumo() {
   );
 }
 
+// Identifica parcelas atuais e antigas sem apagar compras não relacionadas.
+function identificarParcelas(conta) {
+  if (conta.parcelamentoId) {
+    return { id: conta.parcelamentoId };
+  }
+  // Compatibilidade com parcelas mais antigas, sem identificador.
+  const identificacao = /^(.*) \\((\\d+)\\/(\\d+)\\)$/.exec(conta.nome);
+  if (!identificacao) return null;
+  const [, nome, numeroTexto, totalTexto] = identificacao;
+  const numero = Number(numeroTexto);
+  const total = Number(totalTexto);
+  if (!nome || total < 2 || numero < 1 || numero > total) return null;
+  const inicio = adicionarMeses(mesAtual, 1 - numero);
+  const grupo = { nome, total, inicio, categoria: conta.categoria, valor: Number(conta.valor), antigo: true };
+  // Só agrupa registros antigos se existir outra parcela compatível.
+  let encontradas = 0;
+  for (const [chave, dados] of Object.entries(dadosPorMes)) {
+    for (const item of (dados.despesas || [])) {
+      if (pertenceAoGrupo(item, chave, grupo)) encontradas++;
+    }
+  }
+  return encontradas > 1 ? grupo : null;
+}
+
+function pertenceAoGrupo(item, chaveMes, grupo) {
+  if (grupo.id) return item.parcelamentoId === grupo.id;
+  if (item.parcelamentoId) return false;
+  if (item.categoria !== grupo.categoria || Number(item.valor) !== grupo.valor) return false;
+  for (let i = 0; i < grupo.total; i++) {
+    if (chaveMes === adicionarMeses(grupo.inicio, i) &&
+        item.nome === grupo.nome + " (" + (i + 1) + "/" + grupo.total + ")") {
+      return true;
+    }
+  }
+  return false;
+}
+
 // MOSTRAR LISTA DE DESPESAS
 // MANTÉM AS CLASSES E ESTILOS ORIGINAIS
 
@@ -188,49 +225,43 @@ function renderizarDespesas() {
     remover.style.color = "#803e36";
 
     remover.addEventListener("click", () => {
-      if (conta.parcelamentoId) {
-        const todas = window.confirm(
-          "Excluir TODAS as parcelas desta compra?\n\n" +
-          "OK: excluir todas as parcelas, inclusive dos outros meses.\n" +
-          "Cancelar: escolher se deseja excluir somente esta parcela."
-        );
+      const grupo = identificarParcelas(conta);
+      if (grupo) {
+        if (!confirm(
+          "Excluir a compra parcelada inteira, de todos os meses?\\n\\n" +
+          "Isso removerá todas as parcelas desta compra."
+        )) return;
 
-        if (todas) {
-          // Salva a remoção de toda a compra em uma única gravação.
-          // Outras despesas e dados mensais permanecem intactos.
-          const copia = JSON.parse(JSON.stringify(dadosPorMes));
-          copia[mesAtual] = {
-            salario: salario.value,
-            vt: vt.value,
-            despesas: despesas.map(item => ({ ...item }))
-          };
-          for (const dados of Object.values(copia)) {
-            if (Array.isArray(dados.despesas)) {
-              dados.despesas = dados.despesas.filter(
-                item => item.parcelamentoId !== conta.parcelamentoId
-              );
-            }
-          }
-
-          try {
-            localStorage.setItem(CHAVE, JSON.stringify(copia));
-            dadosPorMes = copia;
-            despesas = copia[mesAtual].despesas;
-            renderizarDespesas();
-          } catch (erro) {
-            console.error("Não foi possível excluir todas as parcelas:", erro);
-            alert("Não foi possível salvar a exclusão.");
-          }
-          return;
+        // Persistir uma cópia integral; não tocar em outras despesas.
+        const copia = JSON.parse(JSON.stringify(dadosPorMes));
+        copia[mesAtual] = {
+          salario: salario.value,
+          vt: vt.value,
+          despesas: despesas.map(item => ({ ...item }))
+        };
+        let removidas = 0;
+        for (const [chaveMes, dados] of Object.entries(copia)) {
+          if (!Array.isArray(dados.despesas)) continue;
+          const antes = dados.despesas.length;
+          dados.despesas = dados.despesas.filter(
+            item => !pertenceAoGrupo(item, chaveMes, grupo)
+          );
+          removidas += antes - dados.despesas.length;
         }
-
-        if (!window.confirm("Excluir somente esta parcela do mês atual?")) {
-          return;
+        if (!removidas) return;
+        try {
+          localStorage.setItem(CHAVE, JSON.stringify(copia));
+          dadosPorMes = copia;
+          despesas = copia[mesAtual]?.despesas || [];
+          renderizarDespesas();
+        } catch (erro) {
+          console.error("Erro ao excluir compra parcelada:", erro);
+          alert("Não foi possível salvar a exclusão.");
         }
-      } else if (!window.confirm("Excluir esta despesa?")) {
         return;
       }
 
+      if (!confirm("Excluir esta despesa?")) return;
       despesas.splice(indice, 1);
       salvarDados();
       renderizarDespesas();
