@@ -10,6 +10,10 @@ const dinheiro = valor =>
 const mes = document.getElementById("mes");
 const salario = document.getElementById("salario");
 const vt = document.getElementById("vt");
+const quantidadeParcelas = document.getElementById("quantidadeParcelas");
+const VALOR_VT = "233.20";
+vt.value = VALOR_VT;
+vt.readOnly = true;
 const totalDespesas = document.getElementById("totalDespesas");
 const saldo = document.getElementById("saldo");
 const formulario = document.getElementById("formDespesa");
@@ -52,7 +56,7 @@ function salvarDados() {
 
   dadosPorMes[mesAtual] = {
     salario: salario.value,
-    vt: vt.value,
+    vt: VALOR_VT,
     despesas: despesas.map(conta => ({ ...conta }))
   };
 
@@ -81,7 +85,7 @@ function carregarMes() {
   };
 
   salario.value = dados.salario ?? "";
-  vt.value = dados.vt ?? "";
+  vt.value = VALOR_VT;
 
   despesas = Array.isArray(dados.despesas)
     ? dados.despesas.map(conta => ({ ...conta }))
@@ -207,6 +211,22 @@ document.getElementById("cancelar")
     formulario.hidden = true;
   });
 
+// SOMAR MESES SEM MISTURAR O HISTÓRICO OU O ANO
+function adicionarMeses(chaveMes, quantidade) {
+  const [ano, numeroMes] = chaveMes.split("-").map(Number);
+  const data = new Date(Date.UTC(ano, numeroMes - 1 + quantidade, 1));
+  return `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+// Manter o dia de vencimento quando possível (ex.: dia 31 vira dia 28 em fevereiro).
+function vencimentoDaParcela(vencimento, chaveMes) {
+  if (!vencimento) return "";
+  const dia = Number(vencimento.slice(8, 10));
+  const [ano, numeroMes] = chaveMes.split("-").map(Number);
+  const ultimoDia = new Date(Date.UTC(ano, numeroMes, 0)).getUTCDate();
+  return `${chaveMes}-${String(Math.min(dia, ultimoDia)).padStart(2, "0")}`;
+}
+
 // CADASTRAR E SALVAR DESPESA
 
 formulario.addEventListener("submit", evento => {
@@ -230,12 +250,51 @@ formulario.addEventListener("submit", evento => {
     return;
   }
 
-  despesas.push({
-    nome,
-    categoria,
-    valor,
-    vencimento
-  });
+  const parcelas = Number(quantidadeParcelas.value);
+  if (!Number.isInteger(parcelas) || parcelas < 1 || parcelas > 120) {
+    alert("Informe uma quantidade entre 1 e 120 meses.");
+    return;
+  }
+
+  // Cada parcela pertence ao mês correspondente, sem apagar as contas existentes.
+  // Parcelas futuras ficam no mesmo armazenamento local dos demais meses.
+  const idParcelamento = parcelas > 1
+    ? `parcela-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    : null;
+
+  for (let numero = 0; numero < parcelas; numero++) {
+    const chaveMes = adicionarMeses(mesAtual, numero);
+    const conta = {
+      nome: parcelas > 1 ? `${nome} (${numero + 1}/${parcelas})` : nome,
+      categoria,
+      valor,
+      vencimento: vencimentoDaParcela(vencimento, chaveMes)
+    };
+
+    if (idParcelamento) {
+      conta.parcelamentoId = idParcelamento;
+      conta.parcelaNumero = numero + 1;
+      conta.parcelasTotal = parcelas;
+    }
+
+    if (numero === 0) {
+      despesas.push(conta);
+    } else {
+      if (!dadosPorMes[chaveMes]) {
+        dadosPorMes[chaveMes] = {
+          salario: "",
+          vt: VALOR_VT,
+          despesas: []
+        };
+      }
+
+      if (!Array.isArray(dadosPorMes[chaveMes].despesas)) {
+        dadosPorMes[chaveMes].despesas = [];
+      }
+
+      dadosPorMes[chaveMes].despesas.push(conta);
+    }
+  }
 
   salvarDados();
 
@@ -252,11 +311,7 @@ salario.addEventListener("input", () => {
   salvarDados();
 });
 
-// SALVAR VALE-TRANSPORTE AUTOMATICAMENTE
-
-vt.addEventListener("input", () => {
-  salvarDados();
-});
+// Vale-transporte fixo em todos os meses: R$ 233,20.
 
 // TROCAR DE MÊS
 // O MÊS ANTERIOR É SALVO ANTES DE CARREGAR O NOVO
@@ -269,6 +324,9 @@ mes.addEventListener("change", () => {
 // INICIALIZAR O APLICATIVO
 
 carregarDados();
+
+// O VT sempre é fixo, inclusive para registros de meses antigos.
+vt.value = VALOR_VT;
 
 const agora = new Date();
 
