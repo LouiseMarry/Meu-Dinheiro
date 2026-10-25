@@ -188,8 +188,50 @@ function renderizarDespesas() {
     remover.style.color = "#803e36";
 
     remover.addEventListener("click", () => {
-      despesas.splice(indice, 1);
+      if (conta.parcelamentoId) {
+        const todas = window.confirm(
+          "Excluir TODAS as parcelas desta compra?\n\n" +
+          "OK: excluir todas as parcelas, inclusive dos outros meses.\n" +
+          "Cancelar: escolher se deseja excluir somente esta parcela."
+        );
 
+        if (todas) {
+          // Salva a remoção de toda a compra em uma única gravação.
+          // Outras despesas e dados mensais permanecem intactos.
+          const copia = JSON.parse(JSON.stringify(dadosPorMes));
+          copia[mesAtual] = {
+            salario: salario.value,
+            vt: vt.value,
+            despesas: despesas.map(item => ({ ...item }))
+          };
+          for (const dados of Object.values(copia)) {
+            if (Array.isArray(dados.despesas)) {
+              dados.despesas = dados.despesas.filter(
+                item => item.parcelamentoId !== conta.parcelamentoId
+              );
+            }
+          }
+
+          try {
+            localStorage.setItem(CHAVE, JSON.stringify(copia));
+            dadosPorMes = copia;
+            despesas = copia[mesAtual].despesas;
+            renderizarDespesas();
+          } catch (erro) {
+            console.error("Não foi possível excluir todas as parcelas:", erro);
+            alert("Não foi possível salvar a exclusão.");
+          }
+          return;
+        }
+
+        if (!window.confirm("Excluir somente esta parcela do mês atual?")) {
+          return;
+        }
+      } else if (!window.confirm("Excluir esta despesa?")) {
+        return;
+      }
+
+      despesas.splice(indice, 1);
       salvarDados();
       renderizarDespesas();
     });
