@@ -15,6 +15,7 @@ const quantidadeParcelas = document.getElementById("quantidadeParcelas");
 vt.readOnly = false;
 const totalDespesas = document.getElementById("totalDespesas");
 const saldo = document.getElementById("saldo");
+const faltaPagar = document.getElementById("faltaPagar");
 const formulario = document.getElementById("formDespesa");
 const lista = document.getElementById("listaDespesas");
 
@@ -105,6 +106,10 @@ function atualizarResumo() {
   );
 
   totalDespesas.textContent = dinheiro(total);
+  // Pagamento reduz a dívida pendente, nunca aumenta o saldo disponível.
+  const pendente = despesas.reduce((soma, conta) =>
+    soma + (conta.pago === true ? 0 : (Number(conta.valor) || 0)), 0);
+  faltaPagar.textContent = "Falta pagar: " + dinheiro(pendente);
 
   saldo.textContent = dinheiro(
     (Number(salario.value) || 0) - total
@@ -278,6 +283,29 @@ function renderizarDespesas() {
     const detalhes = document.createElement("div");
     detalhes.style.flex = "1";
 
+    const pago = conta.pago === true;
+    item.style.background = pago ? "#e5eee5" : "#f9e9e7";
+    item.style.borderLeft = pago ? "4px solid #3b7952" : "4px solid #ba534d";
+    item.style.borderRadius = "10px";
+    item.style.padding = "12px";
+
+    const marcarPago = document.createElement("input");
+    marcarPago.type = "checkbox";
+    marcarPago.checked = pago;
+    marcarPago.setAttribute("aria-label", "Marcar " + conta.nome + " como paga");
+    marcarPago.style.cssText = "width:20px;height:20px;flex-shrink:0;accent-color:#3b7952;cursor:pointer;";
+    marcarPago.addEventListener("change", () => {
+      const anterior = despesas[indice].pago;
+      despesas[indice].pago = marcarPago.checked;
+      try {
+        salvarDados();
+        renderizarDespesas();
+      } catch (erro) {
+        despesas[indice].pago = anterior;
+        marcarPago.checked = anterior === true;
+      }
+    });
+
     const nome = document.createElement("strong");
     nome.textContent = conta.nome;
 
@@ -286,7 +314,7 @@ function renderizarDespesas() {
     info.style.cssText =
       "margin:6px 0 0;color:#788078;font-size:12px;";
 
-    info.textContent = `${conta.categoria} · ${
+    info.textContent = `${pago ? "✓ Paga" : "Pendente"} · ${conta.categoria} · ${
       conta.vencimento
         ? new Date(
             conta.vencimento + "T12:00:00"
@@ -332,7 +360,7 @@ function renderizarDespesas() {
     });
 
     detalhes.append(nome, info);
-    item.append(detalhes, valor, editar, remover);
+    item.append(marcarPago, detalhes, valor, editar, remover);
     lista.append(item);
   });
 
@@ -446,6 +474,20 @@ function editarParcelamento(valores) {
     vt: vt.value,
     despesas: despesas.map(item => ({ ...item }))
   };
+  // Guardar o estado de pagamento de cada mês ao editar a compra.
+  const pagamentosAnteriores = new Map();
+  if (edicao.id) {
+    for (const [chave, dados] of Object.entries(copia)) {
+      for (const item of (dados.despesas || [])) {
+        if (item.parcelamentoId === edicao.id) {
+          pagamentosAnteriores.set(chave, item.pago === true);
+        }
+      }
+    }
+  } else {
+    pagamentosAnteriores.set(edicao.mesSelecionado,
+      copia[edicao.mesSelecionado].despesas[edicao.indice]?.pago === true);
+  }
   if (edicao.id) {
     for (const dados of Object.values(copia)) {
       if (Array.isArray(dados.despesas)) {
@@ -463,6 +505,7 @@ function editarParcelamento(valores) {
     : null);
 
   for (const [chaveMes, conta] of criarParcelas(valores, edicao.mesInicio, id)) {
+    conta.pago = pagamentosAnteriores.get(chaveMes) === true;
     if (!copia[chaveMes]) {
       copia[chaveMes] = { salario: "", vt: "", despesas: [] };
     }
