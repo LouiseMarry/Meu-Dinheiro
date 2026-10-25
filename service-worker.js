@@ -1,11 +1,11 @@
 
-const CACHE_NAME = "meu-dinheiro-v14";
+const CACHE_NAME = "meu-dinheiro-v15";
 
 const ARQUIVOS = [
   "./",
   "./index.html",
   "./style.css",
-  "./script.js?v=14",
+  "./script.js?v=15",
   "./manifest.json"
 ];
 
