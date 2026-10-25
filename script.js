@@ -11,9 +11,8 @@ const mes = document.getElementById("mes");
 const salario = document.getElementById("salario");
 const vt = document.getElementById("vt");
 const quantidadeParcelas = document.getElementById("quantidadeParcelas");
-const VALOR_VT = "233.20";
-vt.value = VALOR_VT;
-vt.readOnly = true;
+// Preferência salva exclusivamente neste navegador/dispositivo.
+const CHAVE_VT_PESSOAL = "meu-dinheiro-vt-pessoal-v1";
 const totalDespesas = document.getElementById("totalDespesas");
 const saldo = document.getElementById("saldo");
 const formulario = document.getElementById("formDespesa");
@@ -56,7 +55,7 @@ function salvarDados() {
 
   dadosPorMes[mesAtual] = {
     salario: salario.value,
-    vt: VALOR_VT,
+    vt: vt.value,
     despesas: despesas.map(conta => ({ ...conta }))
   };
 
@@ -85,7 +84,9 @@ function carregarMes() {
   };
 
   salario.value = dados.salario ?? "";
-  vt.value = VALOR_VT;
+  // A preferência pessoal, quando definida, vale para todos os meses.
+  // Sem preferência, preservamos o VT já registrado no mês.
+  vt.value = localStorage.getItem(CHAVE_VT_PESSOAL) ?? (dados.vt ?? "");
 
   despesas = Array.isArray(dados.despesas)
     ? dados.despesas.map(conta => ({ ...conta }))
@@ -283,7 +284,7 @@ formulario.addEventListener("submit", evento => {
       if (!dadosPorMes[chaveMes]) {
         dadosPorMes[chaveMes] = {
           salario: "",
-          vt: VALOR_VT,
+          vt: vt.value,
           despesas: []
         };
       }
@@ -311,7 +312,16 @@ salario.addEventListener("input", () => {
   salvarDados();
 });
 
-// Vale-transporte fixo em todos os meses: R$ 233,20.
+// Cada pessoa pode definir seu VT, válido nos meses seguintes apenas
+// no próprio navegador. Nenhum valor pessoal fica no código público.
+vt.addEventListener("input", () => {
+  try {
+    localStorage.setItem(CHAVE_VT_PESSOAL, vt.value);
+  } catch (erro) {
+    console.error("Não foi possível salvar a preferência do VT:", erro);
+  }
+  salvarDados();
+});
 
 // TROCAR DE MÊS
 // O MÊS ANTERIOR É SALVO ANTES DE CARREGAR O NOVO
@@ -324,9 +334,6 @@ mes.addEventListener("change", () => {
 // INICIALIZAR O APLICATIVO
 
 carregarDados();
-
-// O VT sempre é fixo, inclusive para registros de meses antigos.
-vt.value = VALOR_VT;
 
 const agora = new Date();
 
