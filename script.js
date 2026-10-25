@@ -132,7 +132,7 @@ function identificarParcelas(conta) {
       if (pertenceAoGrupo(item, chave, grupo)) encontradas++;
     }
   }
-  return encontradas > 1 ? grupo : null;
+  return encontradas > 0 ? grupo : null;
 }
 
 function pertenceAoGrupo(item, chaveMes, grupo) {
@@ -146,6 +146,100 @@ function pertenceAoGrupo(item, chaveMes, grupo) {
     }
   }
   return false;
+}
+
+// Painel de escolha exibido somente ao excluir compras parceladas.
+// Usa os tons já existentes, sem alterar CSS ou os cartões do aplicativo.
+function escolherExclusaoParcela(conta, excluirUnica, excluirTodas) {
+  const fundo = document.createElement("div");
+  fundo.setAttribute("role", "presentation");
+  fundo.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.48);display:flex;align-items:center;justify-content:center;padding:20px;";
+
+  const painel = document.createElement("div");
+  painel.setAttribute("role", "dialog");
+  painel.setAttribute("aria-modal", "true");
+  painel.setAttribute("aria-label", "Excluir compra parcelada");
+  painel.style.cssText = "width:min(100%,390px);background:#fff;border-radius:20px;padding:24px;box-shadow:0 12px 40px rgba(0,0,0,.2);color:#29372f;font-family:inherit;";
+
+  const titulo = document.createElement("h3");
+  titulo.textContent = "Excluir compra parcelada?";
+  titulo.style.cssText = "margin:0 0 10px;font-size:19px;";
+
+  const explicacao = document.createElement("p");
+  explicacao.textContent = conta.nome + " — escolha o que deseja remover:";
+  explicacao.style.cssText = "margin:0 0 20px;font-size:14px;line-height:1.5;color:#606c64;";
+
+  const escolhas = document.createElement("div");
+  escolhas.style.cssText = "display:flex;flex-direction:column;gap:10px;";
+
+  const criarBotao = (rotulo, fundoBotao, textoBotao, acao) => {
+    const botao = document.createElement("button");
+    botao.type = "button";
+    botao.textContent = rotulo;
+    botao.style.cssText = "width:100%;padding:13px;border:0;border-radius:12px;font-weight:600;background:" + fundoBotao + ";color:" + textoBotao + ";cursor:pointer;";
+    botao.addEventListener("click", () => {
+      fundo.remove();
+      document.removeEventListener("keydown", fecharEscape);
+      if (acao) acao();
+    });
+    return botao;
+  };
+  const fecharEscape = evento => {
+    if (evento.key === "Escape") {
+      fundo.remove();
+      document.removeEventListener("keydown", fecharEscape);
+    }
+  };
+  fundo.addEventListener("click", evento => {
+    if (evento.target === fundo) fundo.remove();
+  });
+  escolhas.append(
+    criarBotao("Excluir somente esta parcela", "#e5eee5", "#263e33", excluirUnica),
+    criarBotao("Excluir todas as parcelas", "#803e36", "#fff", excluirTodas),
+    criarBotao("Cancelar", "#eceee9", "#29372f", null)
+  );
+  painel.append(titulo, explicacao, escolhas);
+  fundo.append(painel);
+  document.body.append(fundo);
+  document.addEventListener("keydown", fecharEscape);
+}
+
+function excluirContaDoMes(indice) {
+  const copia = JSON.parse(JSON.stringify(dadosPorMes));
+  copia[mesAtual] = {
+    salario: salario.value,
+    vt: vt.value,
+    despesas: despesas.filter((_, i) => i !== indice).map(item => ({ ...item }))
+  };
+  gravarExclusao(copia);
+}
+
+function excluirCompraDeTodosMeses(grupo) {
+  const copia = JSON.parse(JSON.stringify(dadosPorMes));
+  copia[mesAtual] = {
+    salario: salario.value,
+    vt: vt.value,
+    despesas: despesas.map(item => ({ ...item }))
+  };
+  for (const [chaveMes, dados] of Object.entries(copia)) {
+    if (!Array.isArray(dados.despesas)) continue;
+    dados.despesas = dados.despesas.filter(
+      item => !pertenceAoGrupo(item, chaveMes, grupo)
+    );
+  }
+  gravarExclusao(copia);
+}
+
+function gravarExclusao(copia) {
+  try {
+    localStorage.setItem(CHAVE, JSON.stringify(copia));
+    dadosPorMes = copia;
+    despesas = copia[mesAtual]?.despesas || [];
+    renderizarDespesas();
+  } catch (erro) {
+    console.error("Erro ao excluir despesa:", erro);
+    alert("Não foi possível salvar a exclusão. Nenhuma conta foi removida.");
+  }
 }
 
 // MOSTRAR LISTA DE DESPESAS
@@ -227,44 +321,14 @@ function renderizarDespesas() {
     remover.addEventListener("click", () => {
       const grupo = identificarParcelas(conta);
       if (grupo) {
-        if (!confirm(
-          "Excluir a compra parcelada inteira, de todos os meses?\n\n" +
-          "Isso removerá todas as parcelas desta compra."
-        )) return;
-
-        // Persistir uma cópia integral; não tocar em outras despesas.
-        const copia = JSON.parse(JSON.stringify(dadosPorMes));
-        copia[mesAtual] = {
-          salario: salario.value,
-          vt: vt.value,
-          despesas: despesas.map(item => ({ ...item }))
-        };
-        let removidas = 0;
-        for (const [chaveMes, dados] of Object.entries(copia)) {
-          if (!Array.isArray(dados.despesas)) continue;
-          const antes = dados.despesas.length;
-          dados.despesas = dados.despesas.filter(
-            item => !pertenceAoGrupo(item, chaveMes, grupo)
-          );
-          removidas += antes - dados.despesas.length;
-        }
-        if (!removidas) return;
-        try {
-          localStorage.setItem(CHAVE, JSON.stringify(copia));
-          dadosPorMes = copia;
-          despesas = copia[mesAtual]?.despesas || [];
-          renderizarDespesas();
-        } catch (erro) {
-          console.error("Erro ao excluir compra parcelada:", erro);
-          alert("Não foi possível salvar a exclusão.");
-        }
-        return;
+        escolherExclusaoParcela(
+          conta,
+          () => excluirContaDoMes(indice),
+          () => excluirCompraDeTodosMeses(grupo)
+        );
+      } else if (window.confirm("Excluir esta despesa?")) {
+        excluirContaDoMes(indice);
       }
-
-      if (!confirm("Excluir esta despesa?")) return;
-      despesas.splice(indice, 1);
-      salvarDados();
-      renderizarDespesas();
     });
 
     detalhes.append(nome, info);
