@@ -113,9 +113,16 @@
       </div>
     </section>
 
-    <footer>Feito com carinho para cuidar do seu dinheiro ♡</footer>
+    <footer>
+      <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+        <button id="exportarBackup" type="button" style="padding:9px 14px;font-size:12px;">Salvar backup</button>
+        <button id="importarBackup" type="button" style="padding:9px 14px;font-size:12px;">Restaurar backup</button>
+        <input id="arquivoBackup" type="file" accept=".json,application/json" hidden>
+      </div>
+      Feito com amor por Louise para Lucas ♡
+    </footer>
   </main>
 
-  <script src="./script.js?v=15"></script>
+  <script src="./script.js?v=16"></script>
 </body>
 </html>
