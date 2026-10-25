@@ -289,20 +289,38 @@ function renderizarDespesas() {
     item.style.borderRadius = "10px";
     item.style.padding = "12px";
 
-    const marcarPago = document.createElement("input");
-    marcarPago.type = "checkbox";
-    marcarPago.checked = pago;
-    marcarPago.setAttribute("aria-label", "Marcar " + conta.nome + " como paga");
-    marcarPago.style.cssText = "width:20px;height:20px;flex-shrink:0;accent-color:#3b7952;cursor:pointer;";
-    marcarPago.addEventListener("change", () => {
-      const anterior = despesas[indice].pago;
-      despesas[indice].pago = marcarPago.checked;
+    const marcarPago = document.createElement("button");
+    marcarPago.type = "button";
+    marcarPago.textContent = pago ? "☑" : "☐";
+    marcarPago.title = pago ? "Marcar como pendente" : "Marcar como paga";
+    marcarPago.setAttribute("aria-label", marcarPago.title + ": " + conta.nome);
+    marcarPago.setAttribute("aria-pressed", String(pago));
+    marcarPago.style.cssText = "flex:0 0 34px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:1px solid " +
+      (pago ? "#3b7952" : "#ba534d") +
+      ";border-radius:9px;background:#fff;color:" +
+      (pago ? "#3b7952" : "#ba534d") +
+      ";font-size:24px;line-height:1;cursor:pointer;padding:0;";
+    marcarPago.addEventListener("click", () => {
+      const anterior = despesas[indice].pago === true;
+      despesas[indice].pago = !anterior;
+      // Uma conta paga continua contando como despesa do mês.
+      // Só o total pendente deve diminuir.
+      const copia = {
+        ...dadosPorMes,
+        [mesAtual]: {
+          salario: salario.value,
+          vt: vt.value,
+          despesas: despesas.map(item => ({ ...item }))
+        }
+      };
       try {
-        salvarDados();
+        localStorage.setItem(CHAVE, JSON.stringify(copia));
+        dadosPorMes = copia;
         renderizarDespesas();
       } catch (erro) {
         despesas[indice].pago = anterior;
-        marcarPago.checked = anterior === true;
+        console.error("Erro ao salvar pagamento:", erro);
+        alert("Não foi possível salvar o pagamento.");
       }
     });
 
@@ -620,8 +638,13 @@ mes.value = mesInicial;
 carregarMes();
 
 // SERVICE WORKER
-
 if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    const chaveAtualizacao = "meu-dinheiro-recarregamento-v14";
+    if (sessionStorage.getItem(chaveAtualizacao) === "feito") return;
+    sessionStorage.setItem(chaveAtualizacao, "feito");
+    window.location.reload();
+  });
   window.addEventListener("load", async () => {
     try {
       const registro = await navigator.serviceWorker.register(
