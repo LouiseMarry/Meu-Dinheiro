@@ -23,6 +23,8 @@ const CHAVE = "meu-dinheiro-dados-v1";
 let despesas = [];
 let dadosPorMes = {};
 let mesAtual = "";
+let edicao = null;
+const botaoSalvar = formulario.querySelector('button[type="submit"]');
 
 // RECUPERAR OS DADOS ARMAZENADOS
 
@@ -90,9 +92,7 @@ function carregarMes() {
     ? dados.despesas.map(conta => ({ ...conta }))
     : [];
 
-  formulario.reset();
-  formulario.hidden = true;
-
+  fecharFormulario();
   renderizarDespesas();
 }
 
@@ -166,6 +166,14 @@ function renderizarDespesas() {
     const valor = document.createElement("strong");
     valor.textContent = dinheiro(conta.valor);
 
+    const editar = document.createElement("button");
+    editar.type = "button";
+    editar.textContent = "Editar";
+    editar.setAttribute("aria-label", "Editar " + conta.nome);
+    editar.style.cssText =
+      "padding:8px 10px;background:#e5eee5;color:#263e33;font-size:12px;";
+    editar.addEventListener("click", () => abrirEdicao(conta, indice));
+
     const remover = document.createElement("button");
     remover.type = "button";
     remover.textContent = "×";
@@ -187,17 +195,61 @@ function renderizarDespesas() {
     });
 
     detalhes.append(nome, info);
-    item.append(detalhes, valor, remover);
+    item.append(detalhes, valor, editar, remover);
     lista.append(item);
   });
 
   atualizarResumo();
 }
 
+// ABRIR E FECHAR FORMULÁRIO
+function fecharFormulario() {
+  edicao = null;
+  formulario.reset();
+  formulario.hidden = true;
+  if (botaoSalvar) botaoSalvar.textContent = "Salvar conta";
+}
+
+function nomeSemParcela(conta) {
+  if (!conta.parcelamentoId || !conta.parcelasTotal) return conta.nome;
+  const sufixo = " (" + conta.parcelaNumero + "/" + conta.parcelasTotal + ")";
+  return conta.nome.endsWith(sufixo)
+    ? conta.nome.slice(0, -sufixo.length)
+    : conta.nome;
+}
+
+function abrirEdicao(conta, indice) {
+  // Usa o início original da compra mesmo ao editar a parcela de outro mês.
+  const numero = Number(conta.parcelaNumero) || 1;
+  const mesInicio = adicionarMeses(mesAtual, 1 - numero);
+  edicao = {
+    indice,
+    mesSelecionado: mesAtual,
+    id: conta.parcelamentoId || null,
+    mesInicio: conta.parcelamentoId ? mesInicio : mesAtual
+  };
+  document.getElementById("nomeDespesa").value = nomeSemParcela(conta);
+  document.getElementById("categoria").value = conta.categoria;
+  document.getElementById("valorDespesa").value = conta.valor;
+  quantidadeParcelas.value = conta.parcelasTotal || 1;
+  // Recupera o dia de vencimento da primeira parcela, quando existir.
+  const primeiro = edicao.id
+    ? (dadosPorMes[edicao.mesInicio]?.despesas || []).find(
+        item => item.parcelamentoId === edicao.id
+      )
+    : conta;
+  document.getElementById("vencimento").value =
+    primeiro?.vencimento || conta.vencimento || "";
+  if (botaoSalvar) botaoSalvar.textContent = "Salvar alterações";
+  formulario.hidden = false;
+  document.getElementById("nomeDespesa").focus();
+}
+
 // ABRIR FORMULÁRIO DE DESPESA
 
 document.getElementById("novaDespesa")
   .addEventListener("click", () => {
+    fecharFormulario();
     formulario.hidden = false;
     document.getElementById("nomeDespesa").focus();
   });
@@ -206,8 +258,7 @@ document.getElementById("novaDespesa")
 
 document.getElementById("cancelar")
   .addEventListener("click", () => {
-    formulario.reset();
-    formulario.hidden = true;
+    fecharFormulario();
   });
 
 // SOMAR MESES SEM MISTURAR O HISTÓRICO OU O ANO
@@ -224,6 +275,76 @@ function vencimentoDaParcela(vencimento, chaveMes) {
   const [ano, numeroMes] = chaveMes.split("-").map(Number);
   const ultimoDia = new Date(Date.UTC(ano, numeroMes, 0)).getUTCDate();
   return `${chaveMes}-${String(Math.min(dia, ultimoDia)).padStart(2, "0")}`;
+}
+
+// Criar as parcelas consecutivas, preservando a data e a virada de ano.
+function criarParcelas(valores, inicio, id) {
+  const registros = [];
+  for (let i = 0; i < valores.parcelas; i++) {
+    const chave = adicionarMeses(inicio, i);
+    const conta = {
+      nome: valores.parcelas > 1
+        ? valores.nome + " (" + (i + 1) + "/" + valores.parcelas + ")"
+        : valores.nome,
+      categoria: valores.categoria,
+      valor: valores.valor,
+      vencimento: vencimentoDaParcela(valores.vencimento, chave)
+    };
+    if (id) {
+      conta.parcelamentoId = id;
+      conta.parcelaNumero = i + 1;
+      conta.parcelasTotal = valores.parcelas;
+    }
+    registros.push([chave, conta]);
+  }
+  return registros;
+}
+
+function editarParcelamento(valores) {
+  // Criamos uma cópia de todo o histórico antes de gravar: nenhuma
+  // outra conta, salário ou VT será modificado.
+  const copia = JSON.parse(JSON.stringify(dadosPorMes));
+  copia[mesAtual] = {
+    salario: salario.value,
+    vt: vt.value,
+    despesas: despesas.map(item => ({ ...item }))
+  };
+  if (edicao.id) {
+    for (const dados of Object.values(copia)) {
+      if (Array.isArray(dados.despesas)) {
+        dados.despesas = dados.despesas.filter(
+          item => item.parcelamentoId !== edicao.id
+        );
+      }
+    }
+  } else {
+    copia[edicao.mesSelecionado].despesas.splice(edicao.indice, 1);
+  }
+
+  const id = edicao.id || (valores.parcelas > 1
+    ? "parcela-" + Date.now() + "-" + Math.random().toString(36).slice(2)
+    : null);
+
+  for (const [chaveMes, conta] of criarParcelas(valores, edicao.mesInicio, id)) {
+    if (!copia[chaveMes]) {
+      copia[chaveMes] = { salario: "", vt: "", despesas: [] };
+    }
+    if (!Array.isArray(copia[chaveMes].despesas)) {
+      copia[chaveMes].despesas = [];
+    }
+    copia[chaveMes].despesas.push(conta);
+  }
+
+  try {
+    localStorage.setItem(CHAVE, JSON.stringify(copia));
+  } catch (erro) {
+    console.error("Erro ao salvar alterações:", erro);
+    alert("Não foi possível salvar a edição. Nenhuma alteração foi aplicada.");
+    return false;
+  }
+  dadosPorMes = copia;
+  despesas = copia[mesAtual]?.despesas || [];
+  return true;
 }
 
 // CADASTRAR E SALVAR DESPESA
@@ -255,51 +376,34 @@ formulario.addEventListener("submit", evento => {
     return;
   }
 
-  // Cada parcela pertence ao mês correspondente, sem apagar as contas existentes.
-  // Parcelas futuras ficam no mesmo armazenamento local dos demais meses.
-  const idParcelamento = parcelas > 1
-    ? `parcela-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    : null;
-
-  for (let numero = 0; numero < parcelas; numero++) {
-    const chaveMes = adicionarMeses(mesAtual, numero);
-    const conta = {
-      nome: parcelas > 1 ? `${nome} (${numero + 1}/${parcelas})` : nome,
-      categoria,
-      valor,
-      vencimento: vencimentoDaParcela(vencimento, chaveMes)
-    };
-
-    if (idParcelamento) {
-      conta.parcelamentoId = idParcelamento;
-      conta.parcelaNumero = numero + 1;
-      conta.parcelasTotal = parcelas;
-    }
-
-    if (numero === 0) {
-      despesas.push(conta);
-    } else {
-      if (!dadosPorMes[chaveMes]) {
-        dadosPorMes[chaveMes] = {
-          salario: "",
-          vt: vt.value,
-          despesas: []
-        };
+  if (edicao) {
+    const atualizado = editarParcelamento({
+      nome, categoria, valor, vencimento, parcelas
+    });
+    if (!atualizado) return;
+  } else {
+    const id = parcelas > 1
+      ? "parcela-" + Date.now() + "-" + Math.random().toString(36).slice(2)
+      : null;
+    const registros = criarParcelas(
+      { nome, categoria, valor, vencimento, parcelas },
+      mesAtual,
+      id
+    );
+    for (const [chaveMes, conta] of registros) {
+      if (chaveMes === mesAtual) {
+        despesas.push(conta);
+      } else {
+        if (!dadosPorMes[chaveMes]) {
+          dadosPorMes[chaveMes] = { salario: "", vt: "", despesas: [] };
+        }
+        dadosPorMes[chaveMes].despesas.push(conta);
       }
-
-      if (!Array.isArray(dadosPorMes[chaveMes].despesas)) {
-        dadosPorMes[chaveMes].despesas = [];
-      }
-
-      dadosPorMes[chaveMes].despesas.push(conta);
     }
+    salvarDados();
   }
 
-  salvarDados();
-
-  formulario.reset();
-  formulario.hidden = true;
-
+  fecharFormulario();
   renderizarDespesas();
 });
 
